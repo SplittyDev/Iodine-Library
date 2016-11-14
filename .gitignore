@@ -1,3 +1,11 @@
+# Iodine-Library specific
+bin/*
+!bin/LibIodine.dll
+docs
+examples
+extras
+Ion
+
 # Binaries
 
 # Useless VS/MonoDevelop crap
