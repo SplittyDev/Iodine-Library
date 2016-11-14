@@ -4,6 +4,7 @@ bin/*
 docs
 examples
 extras
+modules
 tests
 tools
 Ion
