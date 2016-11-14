@@ -1,27 +1,25 @@
-# Iodine Programming Language
-[![Build Status](https://travis-ci.org/IodineLang/Iodine.svg)](https://travis-ci.org/IodineLang/Iodine)
+# Iodine Library for [iosh][iosh]
+Upstream repository: [Iodine][iodine]
 
-Iodine is dynamically typed multi-paradigm programming language written in C#. The syntax of the Iodine is derived from several languages including Python, C#, and F#
+Iodine is dynamically typed multi-paradigm programming language written in C#.   
+The syntax of the Iodine is derived from several languages including Python, C#, and F#.
 
-#### Compiling
-Iodine requires either .NET or mono to run.
+This repository is a stripped-down version of the original Iodine repository,   
+modified to be easily embeddable and to work better with [iosh][iosh].
 
-Iodine can be compiled on *NIX systems by running ```make``` command. I
+An up-to-date version of this library always ships with the latest version of iosh.
 
-#### Installation
-Iodine can be installed on *NIX systems by running ```make install``` as root. 
+## Building
+There should be no reason for you to build this version of Iodine yourself,   
+since it has been designed specifically for the purpose of using it within iosh.   
 
-At the moment there is no installer for Windows.
-#### Usage
-A file can be ran by invoking the interpreter as such
-```
-iodine myFile.id
-```
+If you're desperately wanting to build this library yourself,   
+you can do so using msbuild (Windows) or xbuild (most unixoids).
 
-#### Example
-Below is a Hello, World program in Iodine. You can find more examples in the examples directory
-```go
-func main (args) {
-    print ("Hello, World!");
-}
-```
+On WSL and most unixoids the library can also be built by running ```make```.
+
+## License
+This repository in its entirety is licensed under the BSD 3-Clause License.
+
+[iodine]: https://github.com/IodineLang/Iodine
+[iosh]: https://github.com/SplittyDev/iosh

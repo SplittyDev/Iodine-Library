@@ -4,7 +4,16 @@ bin/*
 docs
 examples
 extras
+tests
+tools
 Ion
+build_iodine.bat
+build_iodine.sh
+build_iodine_nuget.bat
+install.sh
+iodine_run.sh
+test.sh
+uninstall.sh
 
 # Binaries
 

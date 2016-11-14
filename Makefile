@@ -1,9 +1,7 @@
-.PHONY: all clean iodine
+.PHONY: all clean library
 
-all: iodine
+all: library
 
-iodine:
+library:
 	cd ./src/Iodine && nuget restore
-	xbuild ./src/Iodine/Iodine.sln /p:Configuration=Release /p:DefineConstants="COMPILE_EXTRAS" /t:Build "/p:Mono=true;BaseConfiguration=Release"
-install:
-	./install.sh
+	xbuild ./src/Iodine/Iodine.sln /p:Configuration=Release /p:DefineConstants="MINIMAL" /t:Build "/p:Mono=true;BaseConfiguration=Release"
