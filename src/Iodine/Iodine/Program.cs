@@ -55,6 +55,9 @@ namespace Iodine
 
             IodineOptions options = IodineOptions.Parse (args);
 
+            context.ShouldCache = !options.SupressAutoCache;
+            context.ShouldOptimize = !options.SupressOptimizer;
+
             ExecuteOptions (options);
         }
 
@@ -101,6 +104,10 @@ namespace Iodine
             }
 
             switch (options.InterpreterAction) {
+            case InterpreterAction.Check:
+                CheckIfFileExists (options.FileName);
+                CheckSourceUnit (options, SourceUnit.CreateFromFile (options.FileName));
+                break;
             case InterpreterAction.ShowVersion:
                 DisplayInfo ();
                 break;
@@ -108,6 +115,7 @@ namespace Iodine
                 DisplayUsage ();
                 break;
             case InterpreterAction.EvaluateFile:
+                CheckIfFileExists (options.FileName);
                 EvalSourceUnit (options, SourceUnit.CreateFromFile (options.FileName));
                 break;
             case InterpreterAction.EvaluateArgument:
@@ -116,6 +124,13 @@ namespace Iodine
             case InterpreterAction.Repl:
                 LaunchRepl (options);
                 break;
+            }
+        }
+
+        private static void CheckIfFileExists (string file)
+        {
+            if (!File.Exists (file)) {
+                Panic ("Could not find file '{0}'", file);
             }
         }
 
@@ -167,7 +182,7 @@ namespace Iodine
             } catch (UnhandledIodineExceptionException ex) {
                 HandleIodineException (ex);
             } catch (SyntaxException ex) {
-                DisplayErrors (ex.ErrorLog, options.FileName);
+                DisplayErrors (ex.ErrorLog);
                 Panic ("Compilation failed with {0} errors!", ex.ErrorLog.ErrorCount);
             } catch (ModuleNotFoundException ex) {
                 Console.Error.WriteLine (ex.ToString ());
@@ -183,6 +198,16 @@ namespace Iodine
                 Panic ("Program terminated.");
             }
 
+        }
+
+        private static void CheckSourceUnit (IodineOptions options, SourceUnit unit)
+        {
+            try {
+                context.ShouldCache = false;
+                unit.Compile (context);
+            } catch (SyntaxException ex) {
+                DisplayErrors (ex.ErrorLog);
+            }
         }
 
         private static void RunDebugServer ()
@@ -232,12 +257,19 @@ namespace Iodine
             Environment.Exit (0);
         }
 
-        private static void DisplayErrors (ErrorSink errorLog, string filePath)
+        private static void DisplayErrors (ErrorSink errorLog)
         {
-            string[] lines = File.ReadAllLines (filePath);
+            Dictionary<string, string[]> lineDict = new Dictionary<string, string[]> ();
 
             foreach (Error err in errorLog) {
                 SourceLocation loc = err.Location;
+
+                if (!lineDict.ContainsKey (err.Location.File)) {
+                    lineDict [err.Location.File] = File.ReadAllLines (err.Location.File);
+                }
+
+                string[] lines = lineDict [err.Location.File];
+
                 Console.Error.WriteLine ("{0} ({1}:{2}) error ID{3:d4}: {4}",
                     Path.GetFileName (loc.File),
                     loc.Line,
@@ -257,16 +289,18 @@ namespace Iodine
         {
             Console.WriteLine ("usage: iodine [option] ... [file] [arg] ...");
             Console.WriteLine ("\n");
-            Console.WriteLine ("-c    Check syntax only");
-            Console.WriteLine ("-d    Run a debug server");
-            Console.WriteLine ("-e    Evaluate a string of iodine code");
-            Console.WriteLine ("-f    Use builtin fallback REPL shell instead of iosh");
-            Console.WriteLine ("-h    Display this message");
-            Console.WriteLine ("-l    Assume 'while (true) { ...}' loop around the program");
-            Console.WriteLine ("-r    Launch an interactive REPL shell after the supplied program is ran");
-            Console.WriteLine ("-v    Display the version of this interpreter");
-            Console.WriteLine ("-w    Enable all warnings");
-            Console.WriteLine ("-x    Disable all warnings");
+            Console.WriteLine ("-c             Check syntax only");
+            Console.WriteLine ("-d             Run a debug server");
+            Console.WriteLine ("-e             Evaluate a string of iodine code");
+            Console.WriteLine ("-f             Use builtin fallback REPL shell instead of iosh");
+            Console.WriteLine ("-h             Display this message");
+            Console.WriteLine ("-l             Assume 'while (true) { ...}' loop around the program");
+            Console.WriteLine ("-r             Launch an interactive REPL shell after the supplied program is ran");
+            Console.WriteLine ("-v             Display the version of this interpreter");
+            Console.WriteLine ("-w             Enable all warnings");
+            Console.WriteLine ("-x             Disable all warnings");
+            Console.WriteLine ("--no-cache     Do not cache compiled code");
+            Console.WriteLine ("--no-optimize  Disable bytecode optimizations");
             Environment.Exit (0);
         }
 

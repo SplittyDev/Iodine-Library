@@ -1,4 +1,4 @@
-/**
+﻿/**
   * Copyright (c) 2015, GruntTheDivine All rights reserved.
 
   * Redistribution and use in source and binary forms, with or without modification,
@@ -27,30 +27,26 @@
   * DAMAGE.
 **/
 
-using System.Reflection;
-using System.Runtime.CompilerServices;
+using System;
+using System.Collections.Generic;
 
-// Information about this assembly is defined by the following attributes.
-// Change them to the values specific to your project.
+namespace Iodine.Compiler.Ast
+{
+    public class PatternExtractExpression : AstNode
+    {
+        public readonly AstNode Target;
+        public readonly List<string> Captures = new List<string> ();
 
-[assembly: AssemblyTitle ("Iodine")]
-[assembly: AssemblyDescription ("Iodine Interpreter")]
-[assembly: AssemblyConfiguration ("")]
-[assembly: AssemblyCompany ("")]
-[assembly: AssemblyProduct ("Iodine")]
-[assembly: AssemblyCopyright ("IodineLang")]
-[assembly: AssemblyTrademark ("")]
-[assembly: AssemblyCulture ("")]
+        public PatternExtractExpression (SourceLocation location, AstNode target)
+            : base (location)
+        {
+            Target = target;
+        }
 
-// The assembly version has the format "{Major}.{Minor}.{Build}.{Revision}".
-// The form "{Major}.{Minor}.*" will automatically update the build and revision,
-// and "{Major}.{Minor}.{Build}.*" will update just the revision.
-
-[assembly: AssemblyVersion ("0.14.1.*")]
-
-// The following attributes are used to specify the signing key for the assembly,
-// if desired. See the Mono documentation for more information about signing.
-
-//[assembly: AssemblyDelaySign(false)]
-//[assembly: AssemblyKeyFile("")]
+        public override void Visit (AstVisitor visitor)
+        {
+            visitor.Accept (this);
+        }
+    }
+}
 

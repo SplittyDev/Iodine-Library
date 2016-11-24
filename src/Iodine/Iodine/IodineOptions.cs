@@ -9,6 +9,7 @@ namespace Iodine
     public enum InterpreterAction
     {
         Repl,
+        Check,
         EvaluateFile,
         EvaluateArgument,
         ShowHelp,
@@ -37,6 +38,16 @@ namespace Iodine
         }
 
         public bool SupressWarningFlag {
+            protected set;
+            get;
+        }
+
+        public bool SupressAutoCache {
+            protected set;
+            get;
+        }
+
+        public bool SupressOptimizer {
             protected set;
             get;
         }
@@ -91,6 +102,10 @@ namespace Iodine
                 case "--repl":
                     ret.ReplFlag = true;
                     break;
+                case "-c":
+                case "--check":
+                    ret.InterpreterAction = InterpreterAction.Check;
+                    break;
                 case "-v":
                 case "--version":
                     ret.InterpreterAction = InterpreterAction.ShowVersion;
@@ -103,11 +118,17 @@ namespace Iodine
                 case "--eval":
                     ret.InterpreterAction = InterpreterAction.EvaluateArgument;
                     break;
+                case "--no-cache":
+                    ret.SupressAutoCache = true;
+                    break;
+                case "--no-optimize":
+                    ret.SupressOptimizer = true;
+                    break;
                 default:
                     if (args [i].StartsWith ("-")) {
                         Console.Error.WriteLine ("Unknown option '{0}'", args [i]);
                     } else {
-                        ret.FileName = args [i++];
+                        ret.FileName = args [i];
 
                         if (ret.InterpreterAction == InterpreterAction.Repl) {
                             ret.InterpreterAction = InterpreterAction.EvaluateFile;

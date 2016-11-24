@@ -1393,38 +1393,198 @@ namespace Iodine.Compiler
 
         private AstNode ParseCallSubscriptAccess ()
         {
-            return ParseCallSubscriptAccess (ParseLiteral ());
+            return ParseCallSubscriptAccess (ParseMatchExpression ());
         }
 
         private AstNode ParseCallSubscriptAccess (AstNode lvalue)
         {
-            if (Match (TokenClass.OpenParan)) {
-                return ParseCallSubscriptAccess (new CallExpression (Location, lvalue,
-                    ParseArgumentList ()));
-            } else if (Match (TokenClass.OpenBracket)) {
-                return ParseCallSubscriptAccess (ParseIndexer (lvalue));
-            } else if (Match (TokenClass.MemberAccess)) {
-                return ParseCallSubscriptAccess (ParseGet (lvalue));
-            } else if (Match (TokenClass.MemberDefaultAccess)) {
-                return ParseCallSubscriptAccess (ParseGetOrNull (lvalue));
+            if (Current != null) {
+                switch (Current.Class) {
+                case TokenClass.OpenParan:
+                    return ParseCallSubscriptAccess (
+                        new CallExpression (Location, lvalue, ParseArgumentList ())
+                    );
+                case TokenClass.OpenBracket:
+                    return ParseCallSubscriptAccess (ParseIndexerExpression (lvalue));
+                case TokenClass.MemberAccess:
+                    return ParseCallSubscriptAccess (ParseGetExpression (lvalue));
+                case TokenClass.MemberDefaultAccess:
+                    return ParseCallSubscriptAccess (ParseGetOrNullExpression (lvalue));
+                }
             }
+
             return lvalue;
         }
-            
-        private AstNode ParseGet (AstNode lvalue)
+
+        private AstNode ParseIndexerExpression (AstNode lvalue)
+        {
+            Expect (TokenClass.OpenBracket);
+
+            if (Accept (TokenClass.Colon)) {
+                return ParseSlice (lvalue, null);
+            }
+
+            AstNode index = ParseExpression ();
+
+            if (Accept (TokenClass.Colon)) {
+                return ParseSlice (lvalue, index);
+            }
+
+            Expect (TokenClass.CloseBracket);
+            return new IndexerExpression (Location, lvalue, index);
+        }
+
+        private AstNode ParseGetExpression (AstNode lvalue)
         {
             Expect (TokenClass.MemberAccess);
             Token ident = Expect (TokenClass.Identifier);
             return new MemberExpression (Location, lvalue, ident.Value);
         }
 
-        private AstNode ParseGetOrNull (AstNode lvalue)
+        private AstNode ParseGetOrNullExpression (AstNode lvalue)
         {
             Expect (TokenClass.MemberDefaultAccess);
             Token ident = Expect (TokenClass.Identifier);
             return new MemberDefaultExpression (Location, lvalue, ident.Value);
         }
 
+        private AstNode ParseMatchExpression ()
+        {
+            if (Accept (TokenClass.Keyword, "match")) {
+                MatchExpression expr = new MatchExpression (Location, ParseExpression ());
+                Expect (TokenClass.OpenBrace);
+                while (Accept (TokenClass.Keyword, "case")) {
+                    AstNode condition = null;
+                    AstNode pattern = ParsePattern ();
+                    if (Accept (TokenClass.Keyword, "when")) {
+                        condition = ParseExpression ();
+                    }
+                    AstNode value = null;
+
+                    if (Accept (TokenClass.Operator, "=>")) {
+                        value = ParseExpression ();
+                        expr.AddCase (new CaseExpression (
+                            pattern.Location,
+                            pattern,
+                            condition,
+                            value,
+                            false
+                        ));
+                    } else {
+                        value = ParseStatement ();
+                        expr.AddCase (new CaseExpression (
+                            pattern.Location,
+                            pattern, 
+                            condition,
+                            value,
+                            true
+                        ));
+                    }
+                }
+                Expect (TokenClass.CloseBrace);
+                return expr;
+            }
+
+            return ParseLambdaExpression ();
+        }
+
+        private AstNode ParsePattern ()
+        {
+            return ParsePatternOr ();
+        }
+
+        private AstNode ParsePatternOr ()
+        {
+            AstNode expr = ParsePatternAnd ();
+            while (Match (TokenClass.Operator, "|")) {
+                Accept (TokenClass.Operator);
+                expr = new PatternExpression (Location,
+                    BinaryOperation.Or,
+                    expr,
+                    ParsePatternAnd ()
+                );
+            }
+            return expr;
+        }
+
+        private AstNode ParsePatternAnd ()
+        {
+            AstNode expr = ParsePatternExtractor ();
+            while (Match (TokenClass.Operator, "&")) {
+                Accept (TokenClass.Operator);
+                expr = new PatternExpression (Location,
+                    BinaryOperation.And,
+                    expr,
+                    ParsePatternExtractor ()
+                );
+            }
+            return expr;
+        }
+
+        private AstNode ParsePatternExtractor ()
+        {
+            AstNode ret = ParsePatternTerm ();
+
+            if (Accept (TokenClass.OpenParan)) {
+                ret = new PatternExtractExpression (Location, ret);
+
+                while (!Match (TokenClass.CloseParan)) {
+                    Token capture = Expect (TokenClass.Identifier);
+
+                    ((PatternExtractExpression)ret).Captures.Add (capture.Value);
+
+                    if (!Match (TokenClass.CloseParan)) {
+                        Expect (TokenClass.Comma);
+                    }
+                }
+
+                Expect (TokenClass.CloseParan);
+            }
+
+            return ret;
+        }
+
+        private AstNode ParsePatternTerm ()
+        {
+            return ParseLiteral ();
+        }
+
+        private AstNode ParseLambdaExpression ()
+        {
+            if (Accept (TokenClass.Keyword, "lambda")) {
+                bool isInstanceMethod;
+                bool isVariadic;
+                bool acceptsKwargs;
+                bool hasDefaultVals;
+
+                List<NamedParameter> parameters = ParseFuncParameters (
+                    out isInstanceMethod,
+                    out isVariadic,
+                    out acceptsKwargs,
+                    out hasDefaultVals
+                );
+
+                LambdaExpression decl = new LambdaExpression (
+                    Location, 
+                    isInstanceMethod, 
+                    isVariadic, 
+                    acceptsKwargs,
+                    hasDefaultVals,
+                    parameters
+                );
+
+                if (Accept (TokenClass.Operator, "=>")) {
+                    decl.AddStatement (new ReturnStatement (Location, ParseExpression ()));
+                } else {
+                    decl.AddStatement (ParseStatement ());
+                }
+
+                return decl;
+            }
+
+            return ParseLiteral ();
+        }
+            
         private AstNode ParseLiteral ()
         {
             if (Current == null) {
@@ -1434,20 +1594,77 @@ namespace Iodine.Compiler
 
             switch (Current.Class) {
             case TokenClass.OpenBracket:
-                return ParseList ();
+                return ParseListLiteral ();
             case TokenClass.OpenBrace:
-                return ParseHash ();
+                return ParseHashLiteral ();
             case TokenClass.OpenParan:
                 ReadToken ();
                 AstNode expr = ParseExpression ();
                 if (Accept (TokenClass.Comma)) {
-                    return ParseTuple (expr);
+                    return ParseTupleLiteral (expr);
                 }
                 Expect (TokenClass.CloseParan);
                 return expr;
             default:
                 return ParseTerminal ();
             }
+        }
+
+        private AstNode ParseListLiteral ()
+        {
+            Expect (TokenClass.OpenBracket);
+            ListExpression ret = new ListExpression (Location);
+            while (!Match (TokenClass.CloseBracket)) {
+                AstNode expr = ParseAssign ();
+                if (Accept (TokenClass.Keyword, "for")) {
+                    string ident = Expect (TokenClass.Identifier).Value;
+                    Expect (TokenClass.Keyword, "in");
+                    AstNode iterator = ParseExpression ();
+                    AstNode predicate = null;
+                    if (Accept (TokenClass.Keyword, "if")) {
+                        predicate = ParseExpression ();
+                    }
+                    Expect (TokenClass.CloseBracket);
+                    return new ListCompExpression (expr.Location, expr, ident, iterator, predicate);
+                }
+                ret.AddItem (expr);
+                if (!Accept (TokenClass.Comma)) {
+                    break;
+                }
+            }
+            Expect (TokenClass.CloseBracket);
+            return ret;
+        }
+
+        private AstNode ParseHashLiteral ()
+        {
+            Expect (TokenClass.OpenBrace);
+            HashExpression ret = new HashExpression (Location);
+            while (!Match (TokenClass.CloseBrace)) {
+                AstNode key = ParseExpression ();
+                Expect (TokenClass.Colon);
+                AstNode value = ParseExpression ();
+                ret.AddItem (key, value);
+                if (!Accept (TokenClass.Comma)) {
+                    break;
+                }
+            }
+            Expect (TokenClass.CloseBrace);
+            return ret;
+        }
+
+        private AstNode ParseTupleLiteral (AstNode firstVal)
+        {
+            TupleExpression tuple = new TupleExpression (Location);
+            tuple.AddItem (firstVal);
+            while (!Match (TokenClass.CloseParan)) {
+                tuple.AddItem (ParseExpression ());
+                if (!Accept (TokenClass.Comma)) {
+                    break;
+                }
+            }
+            Expect (TokenClass.CloseParan);
+            return tuple;
         }
 
         private AstNode ParseTerminal ()
@@ -1497,10 +1714,6 @@ namespace Iodine.Compiler
                 case "null":
                     ReadToken ();
                     return new NullExpression (Location);
-                case "lambda":
-                    return ParseLambda ();
-                case "match":
-                    return ParseMatch ();
                 }
                 break;
             }
@@ -1508,133 +1721,7 @@ namespace Iodine.Compiler
             MakeError ();
             return null;
         }
-
-        private AstNode ParseMatch ()
-        {
-            Expect (TokenClass.Keyword, "match");
-            MatchExpression expr = new MatchExpression (Location, ParseExpression ());
-            Expect (TokenClass.OpenBrace);
-            while (Accept (TokenClass.Keyword, "case")) {
-                AstNode condition = null;
-                AstNode pattern = ParsePattern ();
-                if (Accept (TokenClass.Keyword, "when")) {
-                    condition = ParseExpression ();
-                }
-                AstNode value = null;
-
-                if (Accept (TokenClass.Operator, "=>")) {
-                    value = ParseExpression ();
-                    expr.AddCase (new CaseExpression (
-                        pattern.Location,
-                        pattern,
-                        condition,
-                        value,
-                        false
-                    ));
-                } else {
-                    value = ParseStatement ();
-                    expr.AddCase (new CaseExpression (
-                        pattern.Location,
-                        pattern, 
-                        condition,
-                        value,
-                        true
-                    ));
-                }
-            }
-            Expect (TokenClass.CloseBrace);
-            return expr;
-        }
-
-        private AstNode ParsePattern ()
-        {
-            return ParsePatternOr ();
-        }
-
-        private AstNode ParsePatternOr ()
-        {
-            AstNode expr = ParsePatternAnd ();
-            while (Match (TokenClass.Operator, "|")) {
-                Accept (TokenClass.Operator);
-                expr = new PatternExpression (Location,
-                    BinaryOperation.Or,
-                    expr,
-                    ParsePatternAnd ()
-                );
-            }
-            return expr;
-        }
-
-        private AstNode ParsePatternAnd ()
-        {
-            AstNode expr = ParsePatternTerm ();
-            while (Match (TokenClass.Operator, "&")) {
-                Accept (TokenClass.Operator);
-                expr = new PatternExpression (Location,
-                    BinaryOperation.And,
-                    expr,
-                    ParsePatternTerm ()
-                );
-            }
-            return expr;
-        }
-
-        private AstNode ParsePatternTerm ()
-        {
-            return ParseLiteral ();
-        }
-
-        private AstNode ParseLambda ()
-        {
-            Expect (TokenClass.Keyword, "lambda");
-            bool isInstanceMethod;
-            bool isVariadic;
-            bool acceptsKwargs;
-            bool hasDefaultVals;
-
-            List<NamedParameter> parameters = ParseFuncParameters (
-                out isInstanceMethod,
-                out isVariadic,
-                out acceptsKwargs,
-                out hasDefaultVals
-            );
-
-            LambdaExpression decl = new LambdaExpression (
-                Location, 
-                isInstanceMethod, 
-                isVariadic, 
-                acceptsKwargs,
-                hasDefaultVals,
-                parameters
-            );
-
-            if (Accept (TokenClass.Operator, "=>")) {
-                decl.AddStatement (new ReturnStatement (Location, ParseExpression ()));
-            } else {
-                decl.AddStatement (ParseStatement ());
-            }
             
-            return decl;
-        }
-
-        private AstNode ParseIndexer (AstNode lvalue)
-        {
-            Expect (TokenClass.OpenBracket);
-
-            if (Accept (TokenClass.Colon)) {
-                return ParseSlice (lvalue, null);
-            }
-
-            AstNode index = ParseExpression ();
-
-            if (Accept (TokenClass.Colon)) {
-                return ParseSlice (lvalue, index);
-            }
-
-            Expect (TokenClass.CloseBracket);
-            return new IndexerExpression (Location, lvalue, index);
-        }
-
         private AstNode ParseSlice (AstNode lvalue, AstNode start)
         {
             if (Accept (TokenClass.CloseBracket)) {
@@ -1705,63 +1792,6 @@ namespace Iodine.Compiler
             Expect (TokenClass.CloseParan);
             return argList;
 
-        }
-
-        private AstNode ParseList ()
-        {
-            Expect (TokenClass.OpenBracket);
-            ListExpression ret = new ListExpression (Location);
-            while (!Match (TokenClass.CloseBracket)) {
-                AstNode expr = ParseAssign ();
-                if (Accept (TokenClass.Keyword, "for")) {
-                    string ident = Expect (TokenClass.Identifier).Value;
-                    Expect (TokenClass.Keyword, "in");
-                    AstNode iterator = ParseExpression ();
-                    AstNode predicate = null;
-                    if (Accept (TokenClass.Keyword, "if")) {
-                        predicate = ParseExpression ();
-                    }
-                    Expect (TokenClass.CloseBracket);
-                    return new ListCompExpression (expr.Location, expr, ident, iterator, predicate);
-                }
-                ret.AddItem (expr);
-                if (!Accept (TokenClass.Comma)) {
-                    break;
-                }
-            }
-            Expect (TokenClass.CloseBracket);
-            return ret;
-        }
-
-        private AstNode ParseHash ()
-        {
-            Expect (TokenClass.OpenBrace);
-            HashExpression ret = new HashExpression (Location);
-            while (!Match (TokenClass.CloseBrace)) {
-                AstNode key = ParseExpression ();
-                Expect (TokenClass.Colon);
-                AstNode value = ParseExpression ();
-                ret.AddItem (key, value);
-                if (!Accept (TokenClass.Comma)) {
-                    break;
-                }
-            }
-            Expect (TokenClass.CloseBrace);
-            return ret;
-        }
-
-        private AstNode ParseTuple (AstNode firstVal)
-        {
-            TupleExpression tuple = new TupleExpression (Location);
-            tuple.AddItem (firstVal);
-            while (!Match (TokenClass.CloseParan)) {
-                tuple.AddItem (ParseExpression ());
-                if (!Accept (TokenClass.Comma)) {
-                    break;
-                }
-            }
-            Expect (TokenClass.CloseParan);
-            return tuple;
         }
 
         private AstNode ParseString (SourceLocation loc, string str)

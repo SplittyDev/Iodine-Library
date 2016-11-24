@@ -302,6 +302,8 @@ namespace Iodine.Compiler
 
             bytecode.FinalizeMethod ();
 
+            OptimizeObject (bytecode);
+
             MethodFlags flags = new MethodFlags ();
 
             if (funcDecl.AcceptsKeywordArgs) {
@@ -1087,6 +1089,7 @@ namespace Iodine.Compiler
         {
             call.Arguments.Visit (this);
             call.Target.Visit (this);
+
             if (call.Arguments.Packed) {
                 Context.CurrentMethod.EmitInstruction (
                     call.Target.Location, 
@@ -1098,19 +1101,6 @@ namespace Iodine.Compiler
                     call.Target.Location,
                     Opcode.Invoke, 
                     call.Arguments.Arguments.Count
-                );
-            }
-
-            if (Context.IsPatternExpression) {
-                Context.CurrentMethod.EmitInstruction (
-                    call.Location,
-                    Opcode.LoadLocal,
-                    Context.PatternTemporary
-                );
-                Context.CurrentMethod.EmitInstruction (
-                    call.Location,
-                    Opcode.BinOp,
-                    (int)BinaryOperation.Equals
                 );
             }
         }
@@ -1483,8 +1473,64 @@ namespace Iodine.Compiler
             Context.CurrentMethod.EmitInstruction (expression.Location, Opcode.LoadFalse);
             Context.CurrentMethod.MarkLabelPosition (endLabel);
         }
-
  
+
+        public override void Accept (PatternExtractExpression extractExpression)
+        {
+            Label notInstance = Context.CurrentMethod.CreateLabel ();
+            Label isInstance = Context.CurrentMethod.CreateLabel ();
+
+            CreateContext (Context.IsInClassBody);
+
+            extractExpression.Target.Visit (this);
+
+            DestroyContext ();
+
+            Context.CurrentMethod.EmitInstruction (extractExpression.Target.Location,
+                Opcode.LoadLocal,
+                Context.PatternTemporary
+            );
+
+            Context.CurrentMethod.EmitInstruction (
+                Opcode.InstanceOf
+            );
+                
+            Context.CurrentMethod.EmitInstruction (Opcode.JumpIfFalse, notInstance);
+
+            Context.CurrentMethod.EmitInstruction (extractExpression.Target.Location,
+                Opcode.LoadLocal,
+                Context.PatternTemporary
+            );
+
+            Context.CurrentMethod.EmitInstruction (
+                Opcode.Unwrap,
+                extractExpression.Captures.Count
+            );
+
+            Context.CurrentMethod.EmitInstruction (Opcode.JumpIfFalse, notInstance);
+
+            if (extractExpression.Captures.Count > 1) {
+                Context.CurrentMethod.EmitInstruction (
+                    Opcode.Unpack,
+                    extractExpression.Captures.Count
+                );
+            }
+
+            foreach (string capture in extractExpression.Captures) {
+                Context.CurrentMethod.EmitInstruction (
+                    Opcode.StoreLocal,
+                    Context.CurrentModule.DefineConstant (new IodineName (capture))
+                );
+
+                symbolTable.AddSymbol (capture);
+            }
+
+            Context.CurrentMethod.EmitInstruction (Opcode.LoadTrue);
+            Context.CurrentMethod.EmitInstruction (Opcode.Jump, isInstance);
+            Context.CurrentMethod.MarkLabelPosition (notInstance);
+            Context.CurrentMethod.EmitInstruction (Opcode.LoadFalse);
+            Context.CurrentMethod.MarkLabelPosition (isInstance);
+        }
         #endregion
 
         #region Terminals
@@ -1501,17 +1547,16 @@ namespace Iodine.Compiler
                         Opcode.LoadGlobal,
                         CreateName (ident.Value)
                     );
+                    Context.CurrentMethod.EmitInstruction (ident.Location,
+                        Opcode.LoadLocal,
+                        Context.PatternTemporary
+                    );
+
+                    Context.CurrentMethod.EmitInstruction (
+                        ident.Location,
+                        Opcode.InstanceOf
+                    );
                 }
-
-                Context.CurrentMethod.EmitInstruction (ident.Location,
-                    Opcode.LoadLocal,
-                    Context.PatternTemporary
-                );
-
-                Context.CurrentMethod.EmitInstruction (
-                    ident.Location,
-                    Opcode.InstanceOf
-                );
                 return;
             
             }
